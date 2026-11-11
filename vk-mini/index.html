@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shorts Bot — проверка прав VK</title>
+<style>
+  body { margin: 0; padding: 20px; font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p { margin: 0 0 14px; color: #555; }
+  .row { background: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .k { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #888; }
+  .v { font-weight: 600; word-break: break-word; }
+  .ok { color: #0a7d32; }
+  .bad { color: #c62828; }
+  button { border: 0; border-radius: 8px; padding: 10px 16px; background: #0077ff; color: #fff; font-size: 15px; cursor: pointer; }
+  #log:empty { display: none; }
+</style>
+</head>
+<body>
+  <h1>Проверка прав VK Bridge</h1>
+  <p>Приложение udlvbot (ID 53028129) · запрос scope <code>video</code></p>
+  <div id="log"></div>
+  <button id="run">Проверить ещё раз</button>
+
+  <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+  <script>
+    const APP_ID = 53028129;
+    const log = document.getElementById('log');
+
+    function row(label, value, kind) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      const k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = label;
+      const v = document.createElement('div');
+      v.className = 'v' + (kind ? ' ' + kind : '');
+      v.textContent = value;
+      div.append(k, v);
+      log.appendChild(div);
+    }
+
+    function errorText(error) {
+      return [error && error.error_type, error && error.error_data && JSON.stringify(error.error_data)].filter(Boolean).join(' · ');
+    }
+
+    async function run() {
+      log.innerHTML = '';
+      let bridge = window.vkBridge;
+      if (!bridge) {
+        row('VK Bridge', 'библиотека не загрузилась', 'bad');
+        return;
+      }
+
+      try {
+        await bridge.send('VKWebAppInit');
+        row('Инициализация', 'ok', 'ok');
+      } catch (error) {
+        row('Инициализация', errorText(error) || 'ошибка', 'bad');
+      }
+
+      try {
+        const allowed = await bridge.send('VKWebAppCheckAllowedScopes', { scopes: 'video' });
+        const list = (allowed && allowed.result) || [];
+        const video = list.find((item) => item.scope === 'video');
+        row('Право video', video ? (video.allowed ? 'разрешено' : 'запрещено') : 'нет ответа',
+            video && video.allowed ? 'ok' : 'bad');
+      } catch (error) {
+        row('Право video', errorText(error) || 'ошибка проверки', 'bad');
+      }
+
+      try {
+        const data = await bridge.send('VKWebAppGetAuthToken', { app_id: APP_ID, scope: 'video' });
+        const token = (data && data.access_token) || '';
+        const scope = (data && data.scope) || '';
+        row('Токен', token ? `получен, длина ${token.length}${scope ? ' · scope: ' + scope : ''}` : 'не пришёл', token ? 'ok' : 'bad');
+        if (data && data.expires) {
+          row('Истекает', new Date(data.expires * 1000).toLocaleString('ru-RU'));
+        }
+      } catch (error) {
+        row('Токен', errorText(error) || 'ошибка выдачи', 'bad');
+      }
+    }
+
+    document.getElementById('run').addEventListener('click', run);
+    run();
+  </script>
+</body>
+</html>
