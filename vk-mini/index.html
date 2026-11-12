@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Shorts Bot — проверка прав VK</title>
+<title>Shorts Bot — доступ к VK</title>
 <style>
   body { margin: 0; padding: 20px; font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; color: #111; }
   h1 { font-size: 18px; margin: 0 0 4px; }
@@ -13,22 +13,36 @@
   .v { font-weight: 600; word-break: break-word; }
   .ok { color: #0a7d32; }
   .bad { color: #c62828; }
-  button { border: 0; border-radius: 8px; padding: 10px 16px; background: #0077ff; color: #fff; font-size: 15px; cursor: pointer; }
-  #log:empty { display: none; }
+  .hint { font-weight: 400; color: #555; font-size: 13px; margin-top: 4px; }
+  button { border: 0; border-radius: 8px; padding: 10px 16px; background: #0077ff; color: #fff; font-size: 15px; cursor: pointer; margin: 0 8px 8px 0; }
+  button.ghost { background: #e7ecf3; color: #111; }
+  textarea { width: 100%; box-sizing: border-box; height: 70px; font: 12px/1.4 ui-monospace, Consolas, monospace; border: 1px solid #d7dde5; border-radius: 8px; padding: 8px; margin-top: 6px; }
 </style>
 </head>
 <body>
-  <h1>Проверка прав VK Bridge</h1>
-  <p>Приложение udlvbot (ID 53028129) · запрос scope <code>video</code></p>
+  <h1>Доступ Shorts Bot к VK</h1>
+  <p>Приложение udlvbot (ID 53028129). Разрешение: video, wall.</p>
   <div id="log"></div>
-  <button id="run">Проверить ещё раз</button>
+  <button id="run">Получить и отправить</button>
+  <button id="copy" class="ghost" hidden>Скопировать токен</button>
+  <div id="manual" hidden>
+    <div class="row">
+      <div class="k">Токен для ручной вставки</div>
+      <textarea id="tokenBox" readonly></textarea>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
   <script>
     const APP_ID = 53028129;
+    const LOCAL_URL = 'http://127.0.0.1:8767/api/vk/token';
     const log = document.getElementById('log');
+    const manual = document.getElementById('manual');
+    const tokenBox = document.getElementById('tokenBox');
+    const copyBtn = document.getElementById('copy');
+    let currentToken = '';
 
-    function row(label, value, kind) {
+    function row(label, value, kind, hint) {
       const div = document.createElement('div');
       div.className = 'row';
       const k = document.createElement('div');
@@ -38,16 +52,53 @@
       v.className = 'v' + (kind ? ' ' + kind : '');
       v.textContent = value;
       div.append(k, v);
+      if (hint) {
+        const h = document.createElement('div');
+        h.className = 'hint';
+        h.textContent = hint;
+        div.appendChild(h);
+      }
       log.appendChild(div);
+      return div;
     }
 
     function errorText(error) {
-      return [error && error.error_type, error && error.error_data && JSON.stringify(error.error_data)].filter(Boolean).join(' · ');
+      if (!error) return 'ошибка';
+      return [error.name, error.message].filter(Boolean).join(': ');
+    }
+
+    async function sendToken(token) {
+      const preview = row('Передача в Shorts Bot', 'отправляю…');
+      try {
+        const response = await fetch(LOCAL_URL, {
+          method: 'POST',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token, app_id: APP_ID }),
+        });
+        if (!response.ok) {
+          preview.querySelector('.v').textContent = 'сервер ответил ' + response.status;
+          preview.querySelector('.v').className = 'v bad';
+          return;
+        }
+        preview.querySelector('.v').textContent = 'токен передан';
+        preview.querySelector('.v').className = 'v ok';
+      } catch (error) {
+        preview.querySelector('.v').textContent = 'запрос заблокирован: ' + errorText(error);
+        preview.querySelector('.v').className = 'v bad';
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = 'Скопируйте токен кнопкой ниже и вставьте его в Shorts Bot вручную.';
+        preview.appendChild(hint);
+      }
     }
 
     async function run() {
       log.innerHTML = '';
-      let bridge = window.vkBridge;
+      manual.hidden = true;
+      copyBtn.hidden = true;
+      const bridge = window.vkBridge;
       if (!bridge) {
         row('VK Bridge', 'библиотека не загрузилась', 'bad');
         return;
@@ -57,31 +108,52 @@
         await bridge.send('VKWebAppInit');
         row('Инициализация', 'ok', 'ok');
       } catch (error) {
-        row('Инициализация', errorText(error) || 'ошибка', 'bad');
+        row('Инициализация', errorText(error), 'bad');
       }
 
       try {
-        const allowed = await bridge.send('VKWebAppCheckAllowedScopes', { scopes: 'video' });
-        const list = (allowed && allowed.result) || [];
-        const video = list.find((item) => item.scope === 'video');
-        row('Право video', video ? (video.allowed ? 'разрешено' : 'запрещено') : 'нет ответа',
-            video && video.allowed ? 'ok' : 'bad');
+        const scopes = await bridge.send('VKWebAppCheckAllowedScopes', { scopes: 'video,wall' });
+        const list = (scopes && scopes.result) || [];
+        const text = list.map((s) => s.scope + ': ' + (s.allowed ? 'да' : 'нет')).join(', ');
+        const ok = list.every((s) => s.allowed);
+        row('Разрешения', text || 'нет ответа', ok ? 'ok' : 'bad');
       } catch (error) {
-        row('Право video', errorText(error) || 'ошибка проверки', 'bad');
+        row('Разрешения', errorText(error), 'bad');
       }
 
+      let token = '';
       try {
-        const data = await bridge.send('VKWebAppGetAuthToken', { app_id: APP_ID, scope: 'video' });
-        const token = (data && data.access_token) || '';
-        const scope = (data && data.scope) || '';
-        row('Токен', token ? `получен, длина ${token.length}${scope ? ' · scope: ' + scope : ''}` : 'не пришёл', token ? 'ok' : 'bad');
-        if (data && data.expires) {
-          row('Истекает', new Date(data.expires * 1000).toLocaleString('ru-RU'));
+        const data = await bridge.send('VKWebAppGetAuthToken', { app_id: APP_ID, scope: 'video,wall' });
+        token = (data && data.access_token) || '';
+        if (!token) {
+          row('Токен', 'не пришёл', 'bad');
+          return;
         }
+        const expires = data.expires ? new Date(data.expires * 1000).toLocaleString('ru-RU') : '—';
+        row('Токен', 'получен, ' + token.length + ' символов', 'ok', 'Действует до: ' + expires);
       } catch (error) {
-        row('Токен', errorText(error) || 'ошибка выдачи', 'bad');
+        row('Токен', errorText(error), 'bad');
+        return;
       }
+
+      currentToken = token;
+      tokenBox.value = token;
+      manual.hidden = false;
+      copyBtn.hidden = false;
+      await sendToken(token);
     }
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(currentToken);
+        copyBtn.textContent = 'Скопировано';
+      } catch (error) {
+        tokenBox.focus();
+        tokenBox.select();
+        copyBtn.textContent = 'Выделено — Ctrl+C';
+      }
+      setTimeout(() => { copyBtn.textContent = 'Скопировать токен'; }, 2500);
+    });
 
     document.getElementById('run').addEventListener('click', run);
     run();
