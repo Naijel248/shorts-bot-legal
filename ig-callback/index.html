@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Instagram — возврат в Shorts Bot</title>
+<style>
+  body { margin: 0; padding: 24px; font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; color: #111; }
+  .card { max-width: 520px; margin: 40px auto; background: #fff; border-radius: 12px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; color: #444; }
+  a { color: #0077ff; word-break: break-all; }
+  code { background: #f0f2f5; border-radius: 6px; padding: 1px 5px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Возвращаю в Shorts Bot</h1>
+    <p id="status">Перенаправляю на локальный сервер…</p>
+    <p id="manual" hidden>
+      Если переход не случился, откройте ссылку вручную:<br />
+      <a id="link" href="#"></a>
+    </p>
+  </div>
+  <script>
+    const target = "http://127.0.0.1:8768/api/instagram/oauth/callback" + location.search;
+    document.getElementById("link").href = target;
+    document.getElementById("link").textContent = target;
+    setTimeout(function () {
+      document.getElementById("manual").hidden = false;
+    }, 2500);
+    location.replace(target);
+  </script>
+</body>
+</html>
